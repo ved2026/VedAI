@@ -1,300 +1,227 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Universal AI Chat</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- Tailwind CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal AI Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
+    </style>
 </head>
+<body class="bg-gray-900 text-gray-100 font-sans antialiased" x-data="chatApp()" x-init="init()">
 
-<body class="bg-gray-100 h-screen overflow-hidden">
-  <div class="flex h-full">
+    <div class="flex h-screen overflow-hidden">
+        
+        <aside class="w-64 bg-gray-800 flex-shrink-0 flex flex-col border-r border-gray-700 transition-all duration-300"
+               :class="sidebarOpen ? 'ml-0' : '-ml-64'">
+            <div class="p-4 flex items-center justify-between">
+                <button @click="startNewChat()" class="flex items-center justify-center w-full gap-2 border border-gray-600 rounded-lg p-2 hover:bg-gray-700 transition">
+                    <span class="text-xl">+</span> New Chat
+                </button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto px-2 space-y-1">
+                <template x-for="chat in history" :key="chat.id">
+                    <div @click="loadChat(chat)" 
+                         class="p-3 text-sm rounded-lg cursor-pointer hover:bg-gray-700 truncate flex justify-between items-center group"
+                         :class="currentChatId === chat.id ? 'bg-gray-700' : ''">
+                        <span x-text="chat.title"></span>
+                        <button @click.stop="deleteChat(chat.id)" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400">×</button>
+                    </div>
+                </template>
+            </div>
 
-    <!-- Sidebar -->
-    <aside class="w-64 bg-gray-900 text-gray-100 flex flex-col">
-      <div class="p-4 flex items-center justify-between border-b border-gray-700">
-        <h1 class="font-semibold">AI Chats</h1>
-        <button id="newChatBtn" class="text-sm text-blue-400 hover:underline">
-          New
-        </button>
-      </div>
+            <div class="p-4 border-t border-gray-700">
+                <button @click="settingsModal = true" class="w-full text-left text-sm text-gray-400 hover:text-white flex items-center gap-2">
+                    ⚙️ Settings
+                </button>
+            </div>
+        </aside>
 
-      <div id="chatList" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
+        <main class="flex-1 flex flex-col relative">
+            <header class="p-4 border-b border-gray-800 flex items-center gap-4">
+                <button @click="sidebarOpen = !sidebarOpen" class="text-gray-400 hover:text-white">☰</button>
+                <div class="text-sm font-medium">
+                    Model: <span class="text-blue-400" x-text="settings.model"></span>
+                </div>
+            </header>
 
-      <div class="p-4 border-t border-gray-700">
-        <button
-          id="settingsBtn"
-          class="w-full bg-gray-800 hover:bg-gray-700 text-sm py-2 rounded"
-        >
-          Settings
-        </button>
-      </div>
-    </aside>
+            <div id="chat-container" class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
+                <template x-for="(msg, index) in messages" :key="index">
+                    <div class="flex gap-4 max-w-3xl mx-auto" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+                        <div class="flex gap-3 max-w-[85%]" :class="msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'">
+                            <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                                 :class="msg.role === 'user' ? 'bg-blue-600' : 'bg-emerald-600'">
+                                <span x-text="msg.role === 'user' ? 'U' : 'AI'"></span>
+                            </div>
+                            <div class="bg-gray-800 rounded-2xl p-4 shadow-sm"
+                                 :class="msg.role === 'user' ? 'rounded-tr-none' : 'rounded-tl-none'">
+                                <p class="text-sm leading-relaxed whitespace-pre-wrap" x-text="msg.content"></p>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="loading" class="max-w-3xl mx-auto flex gap-4">
+                    <div class="animate-pulse flex space-x-2">
+                        <div class="h-2 w-2 bg-gray-500 rounded-full"></div>
+                        <div class="h-2 w-2 bg-gray-500 rounded-full"></div>
+                        <div class="h-2 w-2 bg-gray-500 rounded-full"></div>
+                    </div>
+                </div>
+            </div>
 
-    <!-- Main Chat Area -->
-    <main class="flex-1 flex flex-col">
-      <div id="chatHeader" class="p-4 bg-white border-b font-medium">
-        New Chat
-      </div>
+            <div class="p-4 border-t border-gray-800 bg-gray-900">
+                <div class="max-w-3xl mx-auto relative">
+                    <textarea x-model="userInput" 
+                              @keydown.enter.prevent="sendMessage()"
+                              placeholder="Message Gemini..." 
+                              class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                              rows="1"></textarea>
+                    <button @click="sendMessage()" 
+                            class="absolute right-3 bottom-3 text-blue-500 hover:text-blue-400 font-bold">
+                        ▲
+                    </button>
+                </div>
+                <p class="text-[10px] text-center mt-2 text-gray-500">Static AI Shell v1.0 - Connected via OpenRouter</p>
+            </div>
+        </main>
 
-      <div
-        id="chatMessages"
-        class="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50"
-      ></div>
-
-      <div class="p-4 bg-white border-t">
-        <form id="chatForm" class="flex gap-2">
-          <textarea
-            id="userInput"
-            rows="1"
-            placeholder="Send a message..."
-            class="flex-1 resize-none border rounded px-3 py-2 focus:outline-none focus:ring"
-          ></textarea>
-          <button
-            type="submit"
-            class="bg-blue-600 text-white px-4 rounded hover:bg-blue-700"
-          >
-            Send
-          </button>
-        </form>
-      </div>
-    </main>
-  </div>
-
-  <!-- Settings Modal -->
-  <div
-    id="settingsModal"
-    class="fixed inset-0 bg-black bg-opacity-40 hidden items-center justify-center"
-  >
-    <div class="bg-white w-full max-w-md rounded shadow-lg p-6 space-y-4">
-      <h2 class="text-lg font-semibold">Settings</h2>
-
-      <div>
-        <label class="block text-sm font-medium mb-1">OpenRouter API Key</label>
-        <input
-          id="apiKeyInput"
-          type="password"
-          class="w-full border rounded px-3 py-2"
-          placeholder="sk-or-..."
-        />
-      </div>
-
-      <div>
-        <label class="block text-sm font-medium mb-1">Model Name</label>
-        <input
-          id="modelInput"
-          type="text"
-          class="w-full border rounded px-3 py-2"
-          placeholder="openai/gpt-4o-mini"
-        />
-      </div>
-
-      <div class="flex justify-end gap-2 pt-2">
-        <button
-          id="closeSettingsBtn"
-          class="px-4 py-2 border rounded"
-        >
-          Cancel
-        </button>
-        <button
-          id="saveSettingsBtn"
-          class="px-4 py-2 bg-blue-600 text-white rounded"
-        >
-          Save
-        </button>
-      </div>
+        <div x-show="settingsModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div class="bg-gray-800 rounded-xl max-w-md w-full p-6 border border-gray-700">
+                <h2 class="text-xl font-bold mb-4">API Settings</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">OpenRouter API Key</label>
+                        <input type="password" x-model="settings.apiKey" class="w-full bg-gray-900 border border-gray-700 rounded p-2 focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Model Name</label>
+                        <input type="text" x-model="settings.model" placeholder="google/gemini-pro-1.5" class="w-full bg-gray-900 border border-gray-700 rounded p-2">
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end gap-3">
+                    <button @click="saveSettings()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-medium">Save & Close</button>
+                </div>
+            </div>
+        </div>
     </div>
-  </div>
 
-  <!-- App Script (end of body, as requested) -->
-  <script>
-    /* -------------------------
-       State & Persistence
-    --------------------------*/
-    const STORAGE_KEY = "universal-ai-chat";
-    const SETTINGS_KEY = "universal-ai-settings";
+    <script>
+        function chatApp() {
+            return {
+                sidebarOpen: true,
+                settingsModal: false,
+                loading: false,
+                userInput: '',
+                currentChatId: null,
+                messages: [],
+                history: [],
+                settings: {
+                    apiKey: '',
+                    model: 'google/gemini-2.0-flash-001'
+                },
 
-    let state = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
-      chats: [],
-      activeChatId: null,
-    };
+                init() {
+                    const savedSettings = localStorage.getItem('chat_settings');
+                    if (savedSettings) this.settings = JSON.parse(savedSettings);
+                    
+                    const savedHistory = localStorage.getItem('chat_history');
+                    if (savedHistory) this.history = JSON.parse(savedHistory);
+                    
+                    if (this.history.length > 0) {
+                        this.loadChat(this.history[0]);
+                    } else {
+                        this.startNewChat();
+                    }
+                },
 
-    let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {
-      apiKey: "",
-      model: "openai/gpt-4o-mini",
-    };
+                saveSettings() {
+                    localStorage.setItem('chat_settings', JSON.stringify(this.settings));
+                    this.settingsModal = false;
+                },
 
-    /* -------------------------
-       DOM References
-    --------------------------*/
-    const chatListEl = document.getElementById("chatList");
-    const chatMessagesEl = document.getElementById("chatMessages");
-    const chatHeaderEl = document.getElementById("chatHeader");
-    const userInputEl = document.getElementById("userInput");
+                startNewChat() {
+                    this.currentChatId = Date.now();
+                    this.messages = [];
+                    this.userInput = '';
+                },
 
-    const settingsModal = document.getElementById("settingsModal");
-    const apiKeyInput = document.getElementById("apiKeyInput");
-    const modelInput = document.getElementById("modelInput");
+                loadChat(chat) {
+                    this.currentChatId = chat.id;
+                    this.messages = chat.messages;
+                },
 
-    /* -------------------------
-       Utility Functions
-    --------------------------*/
-    function saveState() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    }
+                deleteChat(id) {
+                    this.history = this.history.filter(c => c.id !== id);
+                    localStorage.setItem('chat_history', JSON.stringify(this.history));
+                    if (this.currentChatId === id) this.startNewChat();
+                },
 
-    function saveSettings() {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    }
+                async sendMessage() {
+                    if (!this.userInput.trim() || !this.settings.apiKey) {
+                        if(!this.settings.apiKey) alert('Please add your API key in Settings');
+                        return;
+                    }
 
-    function createNewChat() {
-      const id = Date.now().toString();
-      state.chats.unshift({
-        id,
-        title: "New Chat",
-        messages: [],
-      });
-      state.activeChatId = id;
-      saveState();
-      render();
-    }
+                    const userContent = this.userInput;
+                    this.messages.push({ role: 'user', content: userContent });
+                    this.userInput = '';
+                    this.loading = true;
 
-    function getActiveChat() {
-      return state.chats.find(c => c.id === state.activeChatId);
-    }
+                    // Scroll to bottom
+                    this.$nextTick(() => {
+                        const container = document.getElementById('chat-container');
+                        container.scrollTop = container.scrollHeight;
+                    });
 
-    /* -------------------------
-       Rendering
-    --------------------------*/
-    function renderSidebar() {
-      chatListEl.innerHTML = "";
-      state.chats.forEach(chat => {
-        const btn = document.createElement("button");
-        btn.className =
-          "w-full text-left px-3 py-2 rounded text-sm truncate " +
-          (chat.id === state.activeChatId
-            ? "bg-gray-700"
-            : "hover:bg-gray-800");
+                    try {
+                        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                            method: "POST",
+                            headers: {
+                                "Authorization": `Bearer ${this.settings.apiKey}`,
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                "model": this.settings.model,
+                                "messages": this.messages
+                            })
+                        });
 
-        btn.textContent = chat.title;
-        btn.onclick = () => {
-          state.activeChatId = chat.id;
-          saveState();
-          render();
-        };
-        chatListEl.appendChild(btn);
-      });
-    }
+                        const data = await response.json();
+                        const aiMessage = data.choices[0].message.content;
+                        
+                        this.messages.push({ role: 'assistant', content: aiMessage });
+                        this.updateHistory(userContent);
+                    } catch (error) {
+                        this.messages.push({ role: 'assistant', content: 'Error: Could not reach the API. Check your key and connection.' });
+                    } finally {
+                        this.loading = false;
+                        this.$nextTick(() => {
+                            const container = document.getElementById('chat-container');
+                            container.scrollTop = container.scrollHeight;
+                        });
+                    }
+                },
 
-    function renderMessages() {
-      chatMessagesEl.innerHTML = "";
-      const chat = getActiveChat();
-      if (!chat) return;
-
-      chatHeaderEl.textContent = chat.title;
-
-      chat.messages.forEach(msg => {
-        const bubble = document.createElement("div");
-        bubble.className =
-          msg.role === "user"
-            ? "max-w-xl ml-auto bg-blue-600 text-white p-3 rounded-lg"
-            : "max-w-xl bg-white border p-3 rounded-lg";
-
-        bubble.textContent = msg.content;
-        chatMessagesEl.appendChild(bubble);
-      });
-
-      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-    }
-
-    function render() {
-      renderSidebar();
-      renderMessages();
-    }
-
-    /* -------------------------
-       API Call (OpenRouter)
-    --------------------------*/
-    async function sendMessage(content) {
-      const chat = getActiveChat();
-      if (!chat) return;
-
-      chat.messages.push({ role: "user", content });
-      if (chat.messages.length === 1) {
-        chat.title = content.slice(0, 30);
-      }
-      render();
-      saveState();
-
-      const assistantMsg = { role: "assistant", content: "..." };
-      chat.messages.push(assistantMsg);
-      render();
-
-      try {
-        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": "Bearer " + settings.apiKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: settings.model,
-            messages: chat.messages.filter(m => m.role !== "assistant" || m.content !== "..."),
-          }),
-        });
-
-        const data = await res.json();
-        assistantMsg.content =
-          data.choices?.[0]?.message?.content || "No response.";
-      } catch (err) {
-        assistantMsg.content = "Error contacting API.";
-      }
-
-      render();
-      saveState();
-    }
-
-    /* -------------------------
-       Event Bindings
-    --------------------------*/
-    document.getElementById("newChatBtn").onclick = createNewChat;
-
-    document.getElementById("chatForm").onsubmit = e => {
-      e.preventDefault();
-      const text = userInputEl.value.trim();
-      if (!text) return;
-      userInputEl.value = "";
-      sendMessage(text);
-    };
-
-    document.getElementById("settingsBtn").onclick = () => {
-      apiKeyInput.value = settings.apiKey;
-      modelInput.value = settings.model;
-      settingsModal.classList.remove("hidden");
-      settingsModal.classList.add("flex");
-    };
-
-    document.getElementById("closeSettingsBtn").onclick = () => {
-      settingsModal.classList.add("hidden");
-    };
-
-    document.getElementById("saveSettingsBtn").onclick = () => {
-      settings.apiKey = apiKeyInput.value.trim();
-      settings.model = modelInput.value.trim();
-      saveSettings();
-      settingsModal.classList.add("hidden");
-    };
-
-    /* -------------------------
-       Initial Boot
-    --------------------------*/
-    if (!state.activeChatId) {
-      createNewChat();
-    } else {
-      render();
-    }
-  </script>
+                updateHistory(firstQuery) {
+                    const existingIdx = this.history.findIndex(c => c.id === this.currentChatId);
+                    if (existingIdx > -1) {
+                        this.history[existingIdx].messages = [...this.messages];
+                    } else {
+                        this.history.unshift({
+                            id: this.currentChatId,
+                            title: firstQuery.substring(0, 30) + '...',
+                            messages: [...this.messages]
+                        });
+                    }
+                    localStorage.setItem('chat_history', JSON.stringify(this.history));
+                }
+            }
+        }
+    </script>
 </body>
 </html>
